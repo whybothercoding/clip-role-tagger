@@ -2,6 +2,8 @@
 
 An [Ableton Live Extension](https://www.ableton.com/en/live/extensions/) that right-click-tags a clip (or a whole track at once) with a role — sets both the clip's color and name prefix in one click, e.g. `Groove 1` → `[BASS] Groove 1`, instead of the usual color-picker-then-rename dance.
 
+See [DEVLOG.md](DEVLOG.md) for how this was actually built — including a process-killing crash, a native-picker glitch, and a license catch made before anything went public.
+
 ## Install
 
 Download the latest `.ablx` from [Releases](../../releases), then drag it into **Live → Settings → Extensions**. Requires Ableton Live 12 Beta (12.4.5+) with Extensions support.
