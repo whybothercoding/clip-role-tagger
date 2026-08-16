@@ -1,0 +1,9 @@
+[
+  { "label": "Drums", "tag": "DRUMS", "color": "#FF764D" },
+  { "label": "Bass", "tag": "BASS", "color": "#5AA9E6" },
+  { "label": "Lead", "tag": "LEAD", "color": "#F2E94E" },
+  { "label": "Pad", "tag": "PAD", "color": "#9B5DE5" },
+  { "label": "FX", "tag": "FX", "color": "#2EC4B6" },
+  { "label": "Vocal", "tag": "VOCAL", "color": "#FF5D8F" },
+  { "label": "Guitar", "color": "#8AC926" }
+]
