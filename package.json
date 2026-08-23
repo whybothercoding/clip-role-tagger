@@ -25,7 +25,7 @@
     "@ableton-extensions/cli": "file:vendor/ableton-extensions-cli-1.0.0-beta.1.tgz",
     "@biomejs/biome": "^2.5.10",
     "@types/node": "^24.1.0",
-    "esbuild": "0.28.1",
+    "esbuild": "0.28.2",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   }
