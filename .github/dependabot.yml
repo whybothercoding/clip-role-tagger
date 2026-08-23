@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Not registry packages — file: deps pointing at gitignored vendor/
+      # tarballs from Ableton's beta SDK. Dependabot can't resolve or
+      # bump these; only Ableton's own beta releases can.
+      - dependency-name: "@ableton-extensions/sdk"
+      - dependency-name: "@ableton-extensions/cli"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

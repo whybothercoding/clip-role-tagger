@@ -1,33 +1,32 @@
-import {
-  initialize,
-  Clip,
-  Track,
-  type ActivationContext,
-  type ContextMenuScope,
-  type ExtensionContext,
-  type Handle,
-} from "@ableton-extensions/sdk";
-import { loadRoles, saveRoles, colorToHex, normalizeRoles, type Role } from "./roles.js";
+import { type ActivationContext, Clip, type ContextMenuScope, type ExtensionContext, type Handle, initialize, Track } from "@ableton-extensions/sdk";
+import { ensureSlots, swapRegistrations } from "./registration.js";
+import { colorToHex, loadRoles, normalizeRoles, type Role, saveRoles } from "./roles.js";
 import settingsDialogHtml from "./settings-dialog.html";
+import { buildTaggedName, withoutExistingTag } from "./tag-format.js";
 
 type Ctx = ExtensionContext<"1.0.0">;
 type Unregister = () => Promise<void>;
 
-// Live's classic packed-RGB clip color convention (0xRRGGBB), snapped to the
-// nearest swatch in Live's fixed clip-color palette. Unverified against this
-// beta's actual wire format — if colors land on the wrong swatch, log an
-// existing clip's `color` first to see the real encoding.
-
-// Strips any previous "[TAG] " prefix this extension added — including tags
-// no longer present in the current role list — so re-tagging always
-// replaces cleanly instead of stacking ("[LEAD] [BASS] Groove 1").
-function withoutExistingTag(name: string): string {
-  return name.replace(/^\[[A-Z0-9]+\] /, "");
-}
+// Clip.color is a packed 0xRRGGBB integer — confirmed against a running
+// Live 12 Beta instance (see DEVLOG.md): a role's declared hex color
+// round-trips through clip.color exactly, and a clip colored natively in
+// Live decodes to a plausible RGB (not to nonsense under a reversed byte
+// order). No snapping to a different palette value observed either.
 
 function applyRole(clip: Clip<"1.0.0">, role: Role): void {
   clip.color = role.color;
-  clip.name = `[${role.tag}] ${withoutExistingTag(clip.name)}`;
+  clip.name = buildTaggedName(clip.name, role.tag);
+}
+
+// Live has no "no color" clip state to revert to, so clearing a role only
+// strips the name prefix — guessing a replacement color would silently
+// clobber any manual recoloring the user did after tagging.
+function clearRole(clip: Clip<"1.0.0">): void {
+  clip.name = withoutExistingTag(clip.name);
+}
+
+function clipsOnTrack(track: Track<"1.0.0">): Clip<"1.0.0">[] {
+  return [...track.clipSlots.map((slot) => slot.clip).filter((c): c is Clip<"1.0.0"> => c !== null), ...track.arrangementClips];
 }
 
 const CLIP_SCOPES: ContextMenuScope<"1.0.0">[] = ["MidiClip", "AudioClip"];
@@ -43,32 +42,28 @@ const TRACK_SCOPES: ContextMenuScope<"1.0.0">[] = ["MidiTrack", "AudioTrack"];
 // torn down and rebuilt on every save, since that path does support a
 // clean unregister.
 let currentRoles: Role[] = [];
-let registeredSlotCount = 0;
+const slotState = { registeredCount: 0 };
 
 function ensureSlotsRegistered(context: Ctx, count: number): void {
-  for (let i = registeredSlotCount; i < count; i++) {
-    context.commands.registerCommand(`clip-role-tagger.tag-clip-slot-${i}`, (handle) => {
+  ensureSlots(count, slotState, (i) => {
+    context.commands.registerCommand(`tagit.tag-clip-slot-${i}`, (handle) => {
       const role = currentRoles[i];
       if (!role) return;
       const clip = context.getObjectFromHandle(handle as Handle, Clip);
       applyRole(clip, role);
     });
 
-    context.commands.registerCommand(`clip-role-tagger.tag-track-slot-${i}`, (handle) => {
+    context.commands.registerCommand(`tagit.tag-track-slot-${i}`, (handle) => {
       const role = currentRoles[i];
       if (!role) return;
       const track = context.getObjectFromHandle(handle as Handle, Track);
-      const clips = [
-        ...track.clipSlots.map((slot) => slot.clip).filter((c): c is Clip<"1.0.0"> => c !== null),
-        ...track.arrangementClips,
-      ];
+      const clips = clipsOnTrack(track);
       if (clips.length === 0) return;
       context.withinTransaction(() => {
         for (const clip of clips) applyRole(clip, role);
       });
     });
-  }
-  registeredSlotCount = Math.max(registeredSlotCount, count);
+  });
 }
 
 async function registerRoleMenus(context: Ctx, roles: Role[]): Promise<Unregister[]> {
@@ -78,10 +73,10 @@ async function registerRoleMenus(context: Ctx, roles: Role[]): Promise<Unregiste
   for (let i = 0; i < roles.length; i++) {
     const role = roles[i];
     for (const scope of CLIP_SCOPES) {
-      registrations.push(context.ui.registerContextMenuAction(scope, `Clip Role Tagger: Tag as: ${role.label}`, `clip-role-tagger.tag-clip-slot-${i}`));
+      registrations.push(context.ui.registerContextMenuAction(scope, role.label, `tagit.tag-clip-slot-${i}`));
     }
     for (const scope of TRACK_SCOPES) {
-      registrations.push(context.ui.registerContextMenuAction(scope, `Clip Role Tagger: Tag all clips as: ${role.label}`, `clip-role-tagger.tag-track-slot-${i}`));
+      registrations.push(context.ui.registerContextMenuAction(scope, `${role.label} (Track)`, `tagit.tag-track-slot-${i}`));
     }
   }
   unregisterFns.push(...(await Promise.all(registrations)));
@@ -95,16 +90,34 @@ export async function activate(activation: ActivationContext) {
 
   currentRoles = loadRoles(storageDirectory);
   if (currentRoles.length === 0) {
-    console.error("clip-role-tagger: no valid roles loaded — check roles.json. No menu items registered.");
+    console.error("tagit: no valid roles loaded — check roles.json. No menu items registered.");
     return;
   }
 
-  ensureSlotsRegistered(context, currentRoles.length);
-  let menuUnregisterFns = await registerRoleMenus(context, currentRoles);
+  let menuUnregisterFns: Unregister[] = [];
 
-  // The "Configure..." entry itself is a fixed command, registered once,
-  // separately from the numbered slots above.
-  context.commands.registerCommand("clip-role-tagger.configure", async () => {
+  // Clear/Configure are registered once, here, before any role menu items —
+  // and never re-registered afterward. That's what pins them at the top of
+  // the menu permanently. Every settings-dialog save re-registers the role
+  // items fresh (see swapRegistrations below); if Clear/Configure were
+  // registered AFTER the initial role batch instead, the very first save
+  // would push that fresh batch ahead of them chronologically, flipping
+  // their apparent menu position from last to second.
+  context.commands.registerCommand("tagit.clear-clip", (handle) => {
+    const clip = context.getObjectFromHandle(handle as Handle, Clip);
+    clearRole(clip);
+  });
+
+  context.commands.registerCommand("tagit.clear-track", (handle) => {
+    const track = context.getObjectFromHandle(handle as Handle, Track);
+    const clips = clipsOnTrack(track);
+    if (clips.length === 0) return;
+    context.withinTransaction(() => {
+      for (const clip of clips) clearRole(clip);
+    });
+  });
+
+  context.commands.registerCommand("tagit.configure", async () => {
     const html = settingsDialogHtml.replace(
       "__INITIAL_ROLES__",
       JSON.stringify(currentRoles.map((r) => ({ label: r.label, tag: r.tag, color: colorToHex(r.color) }))).replace(/</g, "\\u003c"),
@@ -117,14 +130,14 @@ export async function activate(activation: ActivationContext) {
 
     const nextRoles = normalizeRoles(result.roles, "settings dialog");
     if (nextRoles.length === 0) {
-      console.error("clip-role-tagger: settings dialog saved with no valid roles — keeping the previous set.");
+      console.error("tagit: settings dialog saved with no valid roles — keeping the previous set.");
       return;
     }
 
     if (storageDirectory) {
       saveRoles(storageDirectory, nextRoles);
     } else {
-      console.error("clip-role-tagger: no storage directory available — new roles apply for this session only, they won't persist.");
+      console.error("tagit: no storage directory available — new roles apply for this session only, they won't persist.");
     }
 
     ensureSlotsRegistered(context, nextRoles.length); // only registers newly-added indices, never re-registers existing ones
@@ -132,13 +145,24 @@ export async function activate(activation: ActivationContext) {
     // Register the new menu set BEFORE removing the old one, so there's
     // never a gap where the menu is missing entries — worst case is a
     // brief moment of duplicates, not missing roles.
-    const oldUnregisterFns = menuUnregisterFns;
-    menuUnregisterFns = await registerRoleMenus(context, nextRoles);
-    currentRoles = nextRoles;
-    await Promise.all(oldUnregisterFns.map((unregister) => unregister()));
+    menuUnregisterFns = await swapRegistrations(
+      () => registerRoleMenus(context, nextRoles),
+      menuUnregisterFns,
+      (unregister) => unregister(),
+      () => {
+        currentRoles = nextRoles;
+      },
+    );
   });
 
-  for (const scope of TRACK_SCOPES) {
-    await context.ui.registerContextMenuAction(scope, "Configure Clip Role Tagger…", "clip-role-tagger.configure");
+  for (const scope of CLIP_SCOPES) {
+    await context.ui.registerContextMenuAction(scope, "Clear", "tagit.clear-clip");
   }
+  for (const scope of TRACK_SCOPES) {
+    await context.ui.registerContextMenuAction(scope, "Clear (Track)", "tagit.clear-track");
+    await context.ui.registerContextMenuAction(scope, "Configure…", "tagit.configure");
+  }
+
+  ensureSlotsRegistered(context, currentRoles.length);
+  menuUnregisterFns = await registerRoleMenus(context, currentRoles);
 }

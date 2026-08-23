@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/tag-format.ts", "src/registration.ts", "src/roles.ts", "src/*.test.ts"]
+}

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clip Role Tagger — Roles</title>
+  <title>TaGiT — Roles</title>
   <script>
     const isWebKit = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.live;
     const isWebView2 = window.chrome && window.chrome.webview;
@@ -49,12 +49,19 @@
 
     @media (prefers-color-scheme: dark) {
       :root {
+        /* Window stays as-is; controls and fields pull further away from it
+         * (16%/12% → 13%/8%) so buttons and inputs read as distinct surfaces
+         * instead of blending into the dialog background. */
         --p-live-ui-bg: hsl(0, 0%, 21%);
-        --p-live-control-bg: hsl(0, 0%, 16%);
-        --p-live-input-bg: hsl(0, 0%, 12%);
+        --p-live-control-bg: hsl(0, 0%, 13%);
+        --p-live-input-bg: hsl(0, 0%, 8%);
         --p-live-text-primary: hsl(0, 0%, 71%);
-        --p-live-control-border: hsl(0, 0%, 7%);
-        --p-live-text-secondary: hsl(0, 0%, 41%);
+        /* Was 7% — nearly the same as the input fields it's meant to
+         * outline, so borders were effectively invisible. */
+        --p-live-control-border: hsl(0, 0%, 36%);
+        /* Was 41% — under 3:1 contrast against every dark background here.
+         * 64% clears WCAG AA (4.5:1) against all three. */
+        --p-live-text-secondary: hsl(0, 0%, 64%);
         --p-live-accent-primary: hsl(31, 100%, 67%);
         --p-live-control-text--enabled: hsl(0, 0%, 7%);
         --p-live-danger: hsl(4, 70%, 58%);
@@ -108,7 +115,9 @@
       display: flex;
       flex-direction: column;
       gap: 0.4em;
-      padding: 0.25em;
+      /* Was 0.25em — thinner than this box's own 4px border-radius, so
+       * content near the corners crowded the rounded edge unevenly. */
+      padding: 0.5em;
       border: 1px solid var(--c-control-border);
       background: var(--c-input-bg);
       border-radius: 4px;
@@ -194,10 +203,65 @@
     }
     .add-btn:hover { color: var(--c-text-primary); border-color: var(--c-text-secondary); }
 
+    .secondary-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .io-links { display: flex; gap: 1em; }
+
+    .link-btn {
+      background: none;
+      border: none;
+      color: var(--c-text-secondary);
+      cursor: pointer;
+      font-size: 0.95em;
+      padding: 0;
+      text-decoration: underline;
+    }
+    .link-btn:hover { color: var(--c-text-primary); }
+
+    .hidden { display: none; }
+
+    .io-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4em;
+    }
+
+    .io-textarea {
+      background-color: var(--c-input-bg);
+      color: var(--c-text-primary);
+      border: 1px solid var(--c-control-border);
+      border-radius: 3px;
+      padding: 0.5em;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 0.9em;
+      resize: vertical;
+    }
+    .io-textarea:focus { outline: 2px solid var(--c-control-outline); outline-offset: 0; }
+
+    /* io-actions (Load/Close) and buttons (Cancel/Save) share one row —
+     * see .action-row below — instead of stacking as two separate rows
+     * whenever the Export/Import panel is open. */
+    .action-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+    }
+
+    .io-actions {
+      display: flex;
+      gap: 0.5em;
+    }
+
     .buttons {
       display: flex;
-      justify-content: flex-end;
       gap: 0.5em;
+      /* Pushes this group to the row's right edge whether or not
+       * .io-actions is present (hidden = display:none = not in flow). */
+      margin-left: auto;
     }
 
     .btn {
@@ -220,15 +284,33 @@
 </head>
 
 <body>
-  <h1>Clip Role Tagger — Roles</h1>
-  <p class="hint">Each role becomes a "Tag as: …" entry in the clip and track right-click menus. Changes apply immediately — no need to restart Live.</p>
+  <h1>TaGiT — Roles</h1>
+  <p class="hint">Each role becomes an entry in the clip and track right-click menus. Changes apply immediately — no need to restart Live.</p>
 
   <div id="rows"></div>
-  <button class="add-btn" onclick="addRow()">+ Add role</button>
 
-  <div class="buttons">
-    <button class="btn" onclick="closeWithResult({ roles: null })">Cancel</button>
-    <button class="btn primary" onclick="save()">Save</button>
+  <div class="secondary-row">
+    <button class="add-btn" onclick="addRow()">+ Add role</button>
+    <span class="io-links">
+      <button class="link-btn" onclick="toggleExport()">Export…</button>
+      <button class="link-btn" onclick="toggleImport()">Import…</button>
+    </span>
+  </div>
+
+  <div id="io-panel" class="io-panel hidden">
+    <p class="hint" id="io-hint"></p>
+    <textarea id="io-textarea" class="io-textarea" rows="6" spellcheck="false"></textarea>
+  </div>
+
+  <div class="action-row">
+    <div id="io-actions" class="io-actions hidden">
+      <button class="btn" id="io-load-btn" onclick="loadImport()">Load</button>
+      <button class="btn" onclick="closeIoPanel()">Close</button>
+    </div>
+    <div class="buttons">
+      <button class="btn" onclick="closeWithResult({ roles: null })">Cancel</button>
+      <button class="btn primary" onclick="save()">Save</button>
+    </div>
   </div>
 
   <div id="color-picker-popup" class="color-picker-popup hidden"></div>
@@ -290,13 +372,20 @@
     });
 
     function addRow(role) {
-      const color = (role && role.color) || '#888888';
+      // `role` may now come from a user-pasted Import, not just the trusted
+      // initialRoles set from extension.ts — so every field gets validated
+      // for shape (not just presence) and escaped before it reaches an HTML
+      // attribute, including color, which previously skipped escaping.
+      const label = role && typeof role.label === 'string' ? role.label : '';
+      const tag = role && typeof role.tag === 'string' ? role.tag : '';
+      const color = role && typeof role.color === 'string' && role.color ? role.color : '#888888';
+
       const row = document.createElement('div');
       row.className = 'row';
       row.innerHTML = `
-        <button type="button" class="color-swatch-btn" style="background-color: ${color}" data-color="${color}"></button>
-        <input type="text" class="label-input" placeholder="Role name…" value="${role ? escapeAttr(role.label) : ''}">
-        <input type="text" class="tag-input" placeholder="auto" maxlength="10" value="${role && role.tag ? escapeAttr(role.tag) : ''}">
+        <button type="button" class="color-swatch-btn" style="background-color: ${escapeAttr(color)}" data-color="${escapeAttr(color)}"></button>
+        <input type="text" class="label-input" placeholder="Role name…" value="${escapeAttr(label)}">
+        <input type="text" class="tag-input" placeholder="auto" maxlength="10" value="${escapeAttr(tag)}">
         <button class="remove-btn" title="Remove" onclick="this.closest('.row').remove()">×</button>
       `;
       row.querySelector('.color-swatch-btn').addEventListener('click', (e) => openColorPicker(e.currentTarget));
@@ -307,21 +396,87 @@
       return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
     }
 
-    function save() {
-      const roles = Array.from(rowsEl.querySelectorAll('.row')).map((row) => ({
+    function rolesFromRows() {
+      return Array.from(rowsEl.querySelectorAll('.row')).map((row) => ({
         label: row.querySelector('.label-input').value.trim(),
         tag: row.querySelector('.tag-input').value.trim(),
         color: row.querySelector('.color-swatch-btn').dataset.color,
       })).filter((r) => r.label.length > 0);
+    }
 
-      closeWithResult({ roles });
+    function save() {
+      closeWithResult({ roles: rolesFromRows() });
+    }
+
+    // Export/Import both stay inside a plain <textarea> rather than a native
+    // file picker (open/save dialog) — a native <input type="color"> already
+    // fought this modal for focus and slammed shut inside Live's embedded
+    // webview (see the comment on PALETTE above), and a native file dialog
+    // is the same class of window. Copy/paste sidesteps that risk entirely.
+    const ioPanelEl = document.getElementById('io-panel');
+    const ioActionsEl = document.getElementById('io-actions');
+    const ioHintEl = document.getElementById('io-hint');
+    const ioTextareaEl = document.getElementById('io-textarea');
+    const ioLoadBtnEl = document.getElementById('io-load-btn');
+    let ioMode = null;
+
+    function toggleExport() {
+      if (ioMode === 'export') { closeIoPanel(); return; }
+      ioMode = 'export';
+      ioHintEl.textContent = 'Current roles as JSON — select all (already selected) and copy.';
+      ioTextareaEl.value = JSON.stringify(rolesFromRows(), null, 2);
+      ioTextareaEl.readOnly = true;
+      ioLoadBtnEl.classList.add('hidden');
+      ioPanelEl.classList.remove('hidden');
+      ioActionsEl.classList.remove('hidden');
+      ioTextareaEl.focus();
+      ioTextareaEl.select();
+    }
+
+    function toggleImport() {
+      if (ioMode === 'import') { closeIoPanel(); return; }
+      ioMode = 'import';
+      ioHintEl.textContent = 'Paste a roles JSON array below, then Load. This replaces the list above.';
+      ioTextareaEl.value = '';
+      ioTextareaEl.readOnly = false;
+      ioLoadBtnEl.classList.remove('hidden');
+      ioPanelEl.classList.remove('hidden');
+      ioActionsEl.classList.remove('hidden');
+      ioTextareaEl.focus();
+    }
+
+    function closeIoPanel() {
+      ioPanelEl.classList.add('hidden');
+      ioActionsEl.classList.add('hidden');
+      ioMode = null;
+    }
+
+    function loadImport() {
+      let parsed;
+      try {
+        parsed = JSON.parse(ioTextareaEl.value);
+      } catch (err) {
+        ioHintEl.textContent = 'Could not parse that as JSON — check for a trailing comma or missing bracket.';
+        return;
+      }
+      if (!Array.isArray(parsed)) {
+        ioHintEl.textContent = 'Expected a JSON array, e.g. [{ "label": "Bass", "color": "#5AA9E6" }].';
+        return;
+      }
+
+      rowsEl.replaceChildren();
+      parsed.forEach((role) => addRow(role));
+      if (rowsEl.children.length === 0) addRow();
+      closeIoPanel();
     }
 
     initialRoles.forEach(addRow);
     if (initialRoles.length === 0) addRow();
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeWithResult({ roles: null });
+      if (e.key !== 'Escape') return;
+      if (ioMode !== null) { closeIoPanel(); return; }
+      closeWithResult({ roles: null });
     });
   </script>
 </body>

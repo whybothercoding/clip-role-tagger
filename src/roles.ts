@@ -20,7 +20,12 @@ export const DEFAULT_ROLES: { label: string; tag?: string; color: string }[] = [
 ];
 
 function deriveTag(label: string): string {
-  return label.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10) || "ROLE";
+  return (
+    label
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 10) || "ROLE"
+  );
 }
 
 function parseColor(hex: string): number {
@@ -41,7 +46,7 @@ export function colorToHex(color: number): string {
 // skipped rather than throwing — one bad entry shouldn't take the rest down.
 export function normalizeRoles(rawEntries: unknown, source: string): Role[] {
   if (!Array.isArray(rawEntries)) {
-    console.error(`clip-role-tagger: ${source} must be an array, got ${typeof rawEntries}.`);
+    console.error(`tagit: ${source} must be an array, got ${typeof rawEntries}.`);
     return [];
   }
 
@@ -51,13 +56,13 @@ export function normalizeRoles(rawEntries: unknown, source: string): Role[] {
   for (const entry of rawEntries as Record<string, unknown>[]) {
     const label = typeof entry.label === "string" ? entry.label.trim() : "";
     if (!label) {
-      console.error(`clip-role-tagger: skipping ${source} entry with no "label": ${JSON.stringify(entry)}`);
+      console.error(`tagit: skipping ${source} entry with no "label": ${JSON.stringify(entry)}`);
       continue;
     }
 
     const tag = (typeof entry.tag === "string" && entry.tag.trim() ? entry.tag.trim() : deriveTag(label)).toUpperCase();
     if (seenTags.has(tag)) {
-      console.error(`clip-role-tagger: skipping "${label}" (${source}) — duplicate tag "${tag}".`);
+      console.error(`tagit: skipping "${label}" (${source}) — duplicate tag "${tag}".`);
       continue;
     }
 
@@ -65,7 +70,7 @@ export function normalizeRoles(rawEntries: unknown, source: string): Role[] {
     try {
       color = parseColor(typeof entry.color === "string" ? entry.color : "#888888");
     } catch (err) {
-      console.error(`clip-role-tagger: ${label} (${source}) — ${err instanceof Error ? err.message : err}. Using gray.`);
+      console.error(`tagit: ${label} (${source}) — ${err instanceof Error ? err.message : err}. Using gray.`);
       color = 0x888888;
     }
 
@@ -85,7 +90,7 @@ function configPath(storageDirectory: string): string {
 // persistence) if no storage directory is available at all.
 export function loadRoles(storageDirectory: string | undefined): Role[] {
   if (!storageDirectory) {
-    console.error("clip-role-tagger: no storage directory available from this host — using built-in defaults, customization is unavailable this session.");
+    console.error("tagit: no storage directory available from this host — using built-in defaults, customization is unavailable this session.");
     return normalizeRoles(DEFAULT_ROLES, "built-in defaults");
   }
 
@@ -100,7 +105,7 @@ export function loadRoles(storageDirectory: string | undefined): Role[] {
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch (err) {
-    console.error(`clip-role-tagger: ${file} is invalid JSON, using built-in defaults. ${err}`);
+    console.error(`tagit: ${file} is invalid JSON, using built-in defaults. ${err}`);
     parsed = DEFAULT_ROLES;
   }
 

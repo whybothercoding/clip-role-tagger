@@ -1,0 +1,43 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    // settings-dialog.html is intentionally excluded: its inline <script>
+    // wires functions to onclick="" attributes in the surrounding HTML,
+    // which a JS-only analyzer can't see — it would misreport them as
+    // unused. It also runs inside Live's embedded webview, which has
+    // already shown real, hard-to-predict quirks (see DEVLOG.md v3.1);
+    // changes there get verified by hand in a running Live instance, not
+    // by a linter.
+    "includes": ["**", "!!**/dist", "!!**/settings-dialog.html"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 160
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

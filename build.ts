@@ -1,5 +1,5 @@
-import * as esbuild from "esbuild";
 import * as fs from "node:fs";
+import * as esbuild from "esbuild";
 
 const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
 const production = process.argv.includes("--production");

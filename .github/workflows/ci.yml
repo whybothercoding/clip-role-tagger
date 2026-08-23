@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # `npm ci` can't run here: @ableton-extensions/sdk and
+      # @ableton-extensions/cli are file: dependencies pointing at
+      # vendor/*.tgz, and that folder is gitignored — Ableton's Extensions
+      # SDK license forbids redistributing it outside your own application,
+      # so it can't be committed to this public repo (see README.md).
+      # That means extension.ts itself (which imports the SDK) and the
+      # actual .ablx build can't be verified in CI — only a local build,
+      # by someone with their own SDK copy, can do that (see
+      # "Building from source" in README.md).
+      #
+      # Everything CI *can* verify: the SDK-free modules (roles.ts,
+      # tag-format.ts, registration.ts) that hold all of the extension's
+      # actual logic, extracted deliberately so they're testable without
+      # the SDK. Installed ad hoc, matching package.json's devDependencies
+      # — keep these versions in sync with package.json if you bump them.
+      - name: Install CI toolchain (SDK-free — see comment above)
+        run: npm install --no-save --no-audit --no-fund typescript@^5.9.3 @types/node@^24.1.0 tsx@^4.19.0 @biomejs/biome@^2.5.10
+
+      - run: npm run ci

@@ -1,5 +1,5 @@
 {
-  "name": "clip-role-tagger",
+  "name": "tagit",
   "version": "1.0.0",
   "main": "dist/extension.js",
   "engines": {
@@ -10,13 +10,20 @@
     "build": "tsc --noEmit && tsx build.ts --production",
     "build:dev": "tsc --noEmit && tsx build.ts",
     "start": "npm run build:dev && ableton-extensions-cli run --storage-directory ./.storage",
-    "package": "npm run build && ableton-extensions-cli package"
+    "prepackage": "npm run check:versions",
+    "package": "npm run build && ableton-extensions-cli package",
+    "test": "tsx --test src/*.test.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "check:versions": "tsx scripts/check-versions.ts",
+    "ci": "npm run lint && tsc --noEmit -p tsconfig.ci.json && npm run test && npm run check:versions"
   },
   "dependencies": {
     "@ableton-extensions/sdk": "file:vendor/ableton-extensions-sdk-1.0.0-beta.1.tgz"
   },
   "devDependencies": {
     "@ableton-extensions/cli": "file:vendor/ableton-extensions-cli-1.0.0-beta.1.tgz",
+    "@biomejs/biome": "^2.5.10",
     "@types/node": "^24.1.0",
     "esbuild": "0.28.1",
     "tsx": "^4.19.0",
